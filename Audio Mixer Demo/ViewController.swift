@@ -9,6 +9,19 @@
 import UIKit
 import AVFoundation
 
+/*
+ 
+ https://freesound.org/people/tim.kahn/sounds/75064/
+
+ https://stackoverflow.com/a/15360097/4833705
+
+ > https://codeberg.org/soundtouch/soundtouch
+
+ https://stackoverflow.com/questions/32294934/pitch-shifting-in-real-time-with-avaudioengine-using-swift
+
+ https://github.com/AudioKit/AudioKit
+ */
+
 class ViewController: UIViewController {
 
     @IBOutlet weak var playButton: UIButton!
@@ -29,55 +42,74 @@ class ViewController: UIViewController {
         // Tsk tsk, automatically unwrapping optionals is bad form, but
         // this is just a demo so I'll let you off.
         // Here you are getting the path for the sound file you added to your project and converting it into a file url.
-        let path = NSBundle.mainBundle().pathForResource("farah-faucet", ofType: "wav")!
-        let url = NSURL.fileURLWithPath(path)
+        guard let path = Bundle.main.path(forResource: "farah-faucet", ofType: "wav") else { return }
+        let url = URL(fileURLWithPath: path)
         
         // Here you are creating an AVAudioFile from the sound file,
         // preparing a buffer of the correct format and length and loading
         // the file into the buffer.
-        let file = try? AVAudioFile(forReading: url)
-        let buffer = AVAudioPCMBuffer(PCMFormat: file!.processingFormat, frameCapacity: AVAudioFrameCount(file!.length))
-        try! file!.readIntoBuffer(buffer)
         
-        // This is a reverb with a cathedral preset. It's nice and ethereal
-        // You're also setting the wetDryMix which controls the mix between the effect and the 
-        // original sound.
-        let reverb = AVAudioUnitReverb()
-        reverb.loadFactoryPreset(AVAudioUnitReverbPreset.Cathedral)
-        reverb.wetDryMix = 50
+        do {
+            
+            let file = try AVAudioFile(forReading: url)
+            
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) else { return }
+            
+            do {
+                
+                try file.read(into: buffer)
+                
+                // This is a reverb with a cathedral preset. It's nice and ethereal
+                // You're also setting the wetDryMix which controls the mix between the effect and the
+                // original sound.
+                let reverb = AVAudioUnitReverb()
+                reverb.loadFactoryPreset(AVAudioUnitReverbPreset.cathedral)
+                reverb.wetDryMix = 50
+                
+                // This is a distortion with a radio tower preset which works well for speech
+                // As distortion tends to be quite loud you're setting the wetDryMix to only 25
+                let distortion = AVAudioUnitDistortion()
+                distortion.loadFactoryPreset(AVAudioUnitDistortionPreset.speechRadioTower)
+                distortion.wetDryMix = 25
+                
+                // Attach the four nodes to the audio engine
+                engine.attach(playerA)
+                engine.attach(playerB)
+                engine.attach(reverb)
+                engine.attach(distortion)
+                
+                // Connect playerA to the reverb
+                engine.connect(playerA, to: reverb, format: buffer.format)
+                
+                // Connect the reverb to the mixer
+                engine.connect(reverb, to: engine.mainMixerNode, format: buffer.format)
+                
+                // Connect playerB to the distortion
+                engine.connect(playerB, to: distortion, format: buffer.format)
+                
+                // Connect the distortion to the mixer
+                engine.connect(distortion, to: engine.mainMixerNode, format: buffer.format)
+                
+                // Schedule playerA and playerB to play the buffer on a loop
+                playerA.scheduleBuffer(buffer, at: nil, options: AVAudioPlayerNodeBufferOptions.loops, completionHandler: nil)
+                playerB.scheduleBuffer(buffer, at: nil, options: AVAudioPlayerNodeBufferOptions.loops, completionHandler: nil)
+                
+                // Start the audio engine
+                engine.prepare()
+                
+            } catch {
+                print(error.localizedDescription)
+            }
+            
+        } catch {
+            print(error.localizedDescription)
+        }
         
-        // This is a distortion with a radio tower preset which works well for speech
-        // As distortion tends to be quite loud you're setting the wetDryMix to only 25
-        let distortion = AVAudioUnitDistortion()
-        distortion.loadFactoryPreset(AVAudioUnitDistortionPreset.SpeechRadioTower)
-        distortion.wetDryMix = 25
-        
-        // Attach the four nodes to the audio engine
-        engine.attachNode(playerA)
-        engine.attachNode(playerB)
-        engine.attachNode(reverb)
-        engine.attachNode(distortion)
-        
-        // Connect playerA to the reverb
-        engine.connect(playerA, to: reverb, format: buffer.format)
-        
-        // Connect the reverb to the mixer
-        engine.connect(reverb, to: engine.mainMixerNode, format: buffer.format)
-        
-        // Connect playerB to the distortion
-        engine.connect(playerB, to: distortion, format: buffer.format)
-        
-        // Connect the distortion to the mixer
-        engine.connect(distortion, to: engine.mainMixerNode, format: buffer.format)
-        
-        // Schedule playerA and playerB to play the buffer on a loop
-        playerA.scheduleBuffer(buffer, atTime: nil, options: AVAudioPlayerNodeBufferOptions.Loops, completionHandler: nil)
-        playerB.scheduleBuffer(buffer, atTime: nil, options: AVAudioPlayerNodeBufferOptions.Loops, completionHandler: nil)
-        
-        // Start the audio engine
-        engine.prepare()
-        try! engine.start()
-        
+        do {
+            try engine.start()
+        } catch {
+            print(error.localizedDescription)
+        }
     }
 
     override func didReceiveMemoryWarning() {
@@ -86,11 +118,12 @@ class ViewController: UIViewController {
     }
     
     func togglePlayPauseHidden() {
-        pauseButton.hidden = !pauseButton.hidden
-        playButton.hidden = !playButton.hidden
+        pauseButton.isHidden = !pauseButton.isHidden
+        playButton.isHidden = !playButton.isHidden
     }
     
     @IBAction func playButtonTapped(sender: UIButton) {
+        print("tapped")
         playerA.play()
         playerB.play()
         togglePlayPauseHidden()
@@ -106,6 +139,5 @@ class ViewController: UIViewController {
         playerA.volume = sender.value
         playerB.volume = 1.0 - sender.value
     }
-
 }
 
